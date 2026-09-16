@@ -13,11 +13,12 @@ All notable changes to `pid-footer` are documented here.
 
 ### Added
 
-- **A graphical host gets the same numbers.** `setFooter()` takes a pi-tui component and only a
-  terminal can mount one, so outside a terminal the extension publishes the Snapshot Store's data as
-  one strip line instead and lets the host show it. One pipeline, one set of numbers, two renderers —
-  the footer in the terminal, a quota line in the window. A line, not a structured payload: a host
-  with no renderer for the kind would put raw JSON on screen.
+- **A graphical host gets the same numbers, drawn by this extension.** `setFooter()` takes a pi-tui
+  component and only a terminal can mount one, so outside a terminal the extension publishes the
+  Snapshot Store's snapshot, and its own desktop half (`src/ui.tsx`, declared as
+  `"pid": { "ui": … }`) renders it there out of the host's primitives. One pipeline, one set of
+  numbers, two renderers — the footer in the terminal, a tone-coloured quota line in the window.
+  Nothing is guessed by the host: one that does not load the desktop half simply shows nothing.
 
 ## [0.1.0] - 2026-09-01
 
