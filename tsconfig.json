@@ -5,7 +5,14 @@
 		"moduleResolution": "NodeNext",
 		"strict": true,
 		"noEmit": true,
-		"skipLibCheck": true
+		"skipLibCheck": true,
+		"jsx": "react-jsx",
+		"jsxImportSource": "@pid"
 	},
-	"include": ["src/**/*.ts", "test/**/*.ts"]
+	"include": [
+		"src/**/*.ts",
+		"test/**/*.ts",
+		"src/**/*.tsx",
+		"src/**/*.d.ts"
+	]
 }

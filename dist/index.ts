@@ -5104,21 +5104,43 @@ function sameSnapshotData(left, right) {
   return JSON.stringify(leftData) === JSON.stringify(rightData);
 }
 
-// src/strip.ts
-var STRIP_KEY = "quota";
-function formatQuotaLine(snapshot, now = Date.now()) {
-  if (!snapshot) return void 0;
-  if (snapshot.state === "unavailable" || snapshot.state === "error") return void 0;
-  if (snapshot.state === "loading" && snapshot.windows.length === 0) return void 0;
-  if (snapshot.windows.length === 0) return void 0;
-  const from = snapshot.fetchedAt ?? now;
-  const parts = snapshot.windows.map((window) => {
-    const percent = snapshot.state === "loading" ? "\u2014" : formatPercent(window.usedPercent, 0);
-    const reset = window.resetAt !== void 0 ? ` (reset ${formatResetDuration(window.resetAt - from)})` : "";
-    return `${usageWindowLabel(window)} ${percent}${reset}`;
-  });
-  const stale = snapshot.state === "stale" ? " \xB7 stale" : "";
-  return `${providerUsageLabel(snapshot.provider)} ${parts.join(" \xB7 ")}${stale}`;
+// src/host/widget.ts
+var WIDGET_USAGE_KEY = "pid-footer";
+function wantsWidgets(ctx) {
+  return ctx.hasUI && ctx.mode !== "tui";
+}
+function usagePayload(snapshot) {
+  const usage = snapshot.providerUsage;
+  if (!usage) return void 0;
+  const label = snapshot.session.providerLabel;
+  return label === void 0 ? { ...usage } : { ...usage, providerLabel: label };
+}
+function createWidgetPublisher(store) {
+  let unsubscribe;
+  let published;
+  const publish = (ctx) => {
+    const payload = usagePayload(store.getSnapshot());
+    const encoded = payload ? JSON.stringify(payload) : void 0;
+    if (encoded === published) return;
+    published = encoded;
+    ctx.ui.setWidget(WIDGET_USAGE_KEY, encoded === void 0 ? void 0 : [encoded]);
+  };
+  const stop = (ctx) => {
+    unsubscribe?.();
+    unsubscribe = void 0;
+    if (published === void 0) return;
+    published = void 0;
+    if (wantsWidgets(ctx)) ctx.ui.setWidget(WIDGET_USAGE_KEY, void 0);
+  };
+  return {
+    start(ctx) {
+      stop(ctx);
+      if (!wantsWidgets(ctx)) return;
+      publish(ctx);
+      unsubscribe = store.subscribe(() => publish(ctx));
+    },
+    stop
+  };
 }
 
 // src/usage/auth.ts
@@ -5907,7 +5929,7 @@ function pidFooter(pi) {
   });
   let usageManager;
   let activeConfig;
-  let unsubStrip;
+  const widgets = createWidgetPublisher(store);
   let repositoryActive = false;
   const stopUsage = () => {
     usageManager?.sessionShutdown();
@@ -5925,30 +5947,8 @@ function pidFooter(pi) {
       );
       return;
     }
-    if (config.enabled) startStrip(ctx, config);
-    else stopStrip(ctx);
-  };
-  const startStrip = (ctx, config) => {
-    stopStrip();
-    if (!config.enabled || !config.usage.enabled) return;
-    const push = () => {
-      const line = formatQuotaLine(store.getSnapshot().providerUsage);
-      try {
-        ctx.ui.setStatus(STRIP_KEY, line);
-      } catch {
-      }
-    };
-    unsubStrip = store.subscribe(push);
-    push();
-  };
-  const stopStrip = (ctx) => {
-    unsubStrip?.();
-    unsubStrip = void 0;
-    if (!ctx || ctx.mode === "tui") return;
-    try {
-      ctx.ui.setStatus(STRIP_KEY, void 0);
-    } catch {
-    }
+    if (config.enabled) widgets.start(ctx);
+    else widgets.stop(ctx);
   };
   const applyRuntimeConfig = (ctx, config) => {
     activeConfig = config;
@@ -6095,7 +6095,7 @@ ${FOOTER_HELP}`, "error");
     repositoryData.sessionShutdown();
     repositoryActive = false;
     activeConfig = void 0;
-    stopStrip(ctx);
+    widgets.stop(ctx);
     if (ctx.mode === "tui") ctx.ui.setFooter(void 0);
   });
   pi.on("message_update", (_event, ctx) => {
