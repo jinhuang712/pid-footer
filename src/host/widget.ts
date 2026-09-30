@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { FooterStore } from "../state/store.js";
-import type { FooterSnapshot, ProviderUsageSnapshot } from "../state/types.js";
+import type { FooterSnapshot, ProviderUsageSnapshot, ThroughputSnapshot } from "../state/types.js";
 
 /**
  * The same footer data, for a host that is not a terminal.
@@ -23,6 +23,7 @@ export const WIDGET_USAGE_KEY = "pid-footer";
  */
 export interface UsageWidgetPayload extends ProviderUsageSnapshot {
 	providerLabel?: string;
+	throughput?: ThroughputSnapshot;
 }
 
 /** A host that draws, but not in a terminal. In a terminal the footer itself is the presentation. */
@@ -31,10 +32,23 @@ export function wantsWidgets(ctx: ExtensionContext): boolean {
 }
 
 export function usagePayload(snapshot: FooterSnapshot): UsageWidgetPayload | undefined {
-	const usage = snapshot.providerUsage;
+	const throughput = snapshot.conversation.throughput;
+	const usage =
+		snapshot.providerUsage ??
+		(throughput
+			? {
+					provider: snapshot.session.provider ?? "",
+					state: "unavailable" as const,
+					windows: [],
+				}
+			: undefined);
 	if (!usage) return undefined;
 	const label = snapshot.session.providerLabel;
-	return label === undefined ? { ...usage } : { ...usage, providerLabel: label };
+	return {
+		...usage,
+		...(label === undefined ? {} : { providerLabel: label }),
+		...(throughput ? { throughput } : {}),
+	};
 }
 
 export interface WidgetPublisher {

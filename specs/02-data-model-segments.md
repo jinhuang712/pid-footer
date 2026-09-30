@@ -214,6 +214,25 @@ The legacy `default` format value is no longer accepted in Segment configuration
 - Stale provider usage MUST be visually marked or rendered with a muted state.
 - While Provider Usage is loading, the configured Usage Segment MUST remain visible with muted `—` placeholders for the selected windows instead of disappearing; reset countdowns are omitted until values arrive.
 
+### Output throughput
+
+`conversation.throughput` records the latest successful assistant reply as
+`{ outputTokens, durationMs, tokensPerSecond, recordedAt }`. Duration uses a monotonic clock
+from `message_start` to `message_end`, including reasoning but excluding tool execution.
+`message_start` follows the provider stream-start event, so earlier request waiting may be excluded;
+this measures a message-phase average rather than full-request or pure decoding throughput. The numerator is the provider's final `usage.output`, never estimated from text.
+Missing/invalid usage, zero duration, aborted replies and errors do not replace the last valid record.
+
+Each valid measurement is persisted at `turn_end` with `pi.appendEntry("pid-footer/throughput", data)`
+outside model context, after Pi has saved the assistant reply so the record cannot leak into its parent branch. Session start and tree navigation restore only the current branch's latest valid
+record; switching sessions without records clears it. Shutdown discards incomplete timing.
+Old sessions without measurements do not invent historical rates.
+
+The existing Tokens Segment appends `· 42.5 tok/s` in every display mode when available, using
+an accent role. Disabling Tokens hides the rate in the terminal too. Responsive fitting remains
+unchanged. The desktop quota payload includes an optional `throughput` field and may show the
+rate without a supported quota provider. No new configuration field or dependency is needed.
+
 ## 7. Extension status integration
 
 v0.1 supports rendering public extension statuses as a generic Segment. The implementation MUST avoid hard-coding the behavior of a particular extension where possible.

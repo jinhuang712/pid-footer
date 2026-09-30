@@ -16,6 +16,7 @@ import type {
 	CostUsageSnapshot,
 	ProviderUsageSnapshot,
 	RepositorySnapshot,
+	ThroughputSnapshot,
 	UsageWindowSnapshot,
 } from "../state/types.js";
 import {
@@ -119,11 +120,14 @@ export const BUILTIN_SEGMENTS: readonly FooterSegment[] = [
 		),
 	),
 	builtin("tokens", ({ snapshot, format, label, display }) =>
-		tokensContent(
-			snapshot.conversation.tokens,
-			format,
-			label,
-			display as TokenDisplayStyle | undefined,
+		withThroughput(
+			tokensContent(
+				snapshot.conversation.tokens,
+				format,
+				label,
+				display as TokenDisplayStyle | undefined,
+			),
+			snapshot.conversation.throughput,
 		),
 	),
 	builtin("cache", ({ snapshot, format, label, display }) =>
@@ -541,6 +545,19 @@ function styledContextParts(
 		return percent ? [textFor(percent)] : used ? [textFor(used)] : limit ? [textFor(limit)] : [];
 	}
 	return [textFor(percent ? `${used}/${limit} (${percent})` : `${used}/${limit}`)];
+}
+
+function withThroughput(
+	content: SegmentContent | undefined,
+	throughput: ThroughputSnapshot | undefined,
+): SegmentContent | undefined {
+	if (!content || !throughput) return content;
+	const parts: SegmentContentPart[] = [
+		...(content.parts ?? [{ text: content.text }]),
+		{ text: " · ", role: "dim" },
+		{ text: `${throughput.tokensPerSecond.toFixed(1)} tok/s`, role: "accent" },
+	];
+	return { ...content, text: parts.map((part) => part.text).join(""), parts };
 }
 
 function tokensContent(

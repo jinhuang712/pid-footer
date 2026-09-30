@@ -17,69 +17,79 @@ type Tone = "ok" | "warn" | "danger" | "muted";
 
 /** The publisher's own verdict outranks any percentage: a rate-limited window is never green. */
 function tone(state: string, percent?: number): Tone {
-  if (state === "error" || state === "expired") return "danger";
-  if (state === "warning") return "warn";
-  if (percent === undefined) return "muted";
-  if (percent >= 90) return "danger";
-  if (percent >= 70) return "warn";
-  return "ok";
+	if (state === "error" || state === "expired") return "danger";
+	if (state === "warning") return "warn";
+	if (percent === undefined) return "muted";
+	if (percent >= 90) return "danger";
+	if (percent >= 70) return "warn";
+	return "ok";
 }
 
 const SAY: Record<Tone, "ok" | "warn" | "danger" | "faint"> = {
-  ok: "ok",
-  warn: "warn",
-  danger: "danger",
-  muted: "faint",
+	ok: "ok",
+	warn: "warn",
+	danger: "danger",
+	muted: "faint",
 };
 
 function resetIn(at: number | undefined, from: number): string | undefined {
-  if (at === undefined) return undefined;
-  const ms = at - from;
-  if (ms <= 0) return "now";
-  const m = Math.round(ms / 60000);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  return h < 24 ? `${h}h ${m % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+	if (at === undefined) return undefined;
+	const ms = at - from;
+	if (ms <= 0) return "now";
+	const m = Math.round(ms / 60000);
+	if (m < 60) return `${m}m`;
+	const h = Math.floor(m / 60);
+	return h < 24 ? `${h}h ${m % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
 interface Api {
-  readonly id: string;
-  strip: (spec: { render: (ctx: { state: unknown }) => unknown }) => void;
+	readonly id: string;
+	strip: (spec: { render: (ctx: { state: unknown }) => unknown }) => void;
 }
 
 export default function register(pid: Api) {
-  pid.strip({
-    render: ({ state }) => {
-      const usage = state as UsageWidgetPayload | undefined;
-      if (!usage || usage.state === "unavailable") return null;
-      const stale = usage.state === "stale";
-      const from = usage.fetchedAt ?? Date.now();
-      return (
-        <Line gap="wide">
-          <Inline>
-            <Dot tone={stale ? "warn" : "accent"} />
-            <Say tone="soft">{usage.providerLabel ?? usage.provider}</Say>
-            {stale && <Say tone="faint">stale</Say>}
-          </Inline>
-          {usage.windows.length === 0 && usage.state === "loading" && <Say tone="faint">—</Say>}
-          {usage.windows.map((w) => {
-            const reset = resetIn(w.resetAt, from);
-            return (
-              <Inline key={w.id}>
-                <Eyebrow>{w.label}</Eyebrow>
-                <Say tone={SAY[tone(w.state, w.usedPercent)]} mono>
-                  {w.usedPercent === undefined ? "—" : `${Math.round(w.usedPercent)}%`}
-                </Say>
-                {reset && (
-                  <Say tone="faint" mono>
-                    {reset}
-                  </Say>
-                )}
-              </Inline>
-            );
-          })}
-        </Line>
-      );
-    },
-  });
+	pid.strip({
+		render: ({ state }) => {
+			const usage = state as UsageWidgetPayload | undefined;
+			if (!usage || (usage.state === "unavailable" && !usage.throughput)) return null;
+			const stale = usage.state === "stale";
+			const from = usage.fetchedAt ?? Date.now();
+			return (
+				<Line gap="wide">
+					{usage.state !== "unavailable" && (
+						<Inline>
+							<Dot tone={stale ? "warn" : "accent"} />
+							<Say tone="soft">{usage.providerLabel ?? usage.provider}</Say>
+							{stale && <Say tone="faint">stale</Say>}
+						</Inline>
+					)}
+					{usage.throughput && (
+						<Inline>
+							<Eyebrow>Output</Eyebrow>
+							<Say tone="soft" mono>
+								{usage.throughput.tokensPerSecond.toFixed(1)} tok/s
+							</Say>
+						</Inline>
+					)}
+					{usage.windows.length === 0 && usage.state === "loading" && <Say tone="faint">—</Say>}
+					{usage.windows.map((w) => {
+						const reset = resetIn(w.resetAt, from);
+						return (
+							<Inline key={w.id}>
+								<Eyebrow>{w.label}</Eyebrow>
+								<Say tone={SAY[tone(w.state, w.usedPercent)]} mono>
+									{w.usedPercent === undefined ? "—" : `${Math.round(w.usedPercent)}%`}
+								</Say>
+								{reset && (
+									<Say tone="faint" mono>
+										{reset}
+									</Say>
+								)}
+							</Inline>
+						);
+					})}
+				</Line>
+			);
+		},
+	});
 }

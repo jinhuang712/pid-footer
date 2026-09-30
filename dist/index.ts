@@ -975,11 +975,14 @@ var BUILTIN_SEGMENTS = [
   ),
   builtin(
     "tokens",
-    ({ snapshot, format, label, display }) => tokensContent(
-      snapshot.conversation.tokens,
-      format,
-      label,
-      display
+    ({ snapshot, format, label, display }) => withThroughput(
+      tokensContent(
+        snapshot.conversation.tokens,
+        format,
+        label,
+        display
+      ),
+      snapshot.conversation.throughput
     )
   ),
   builtin(
@@ -1293,6 +1296,15 @@ function styledContextParts(context, display, thresholds) {
     return percent ? [textFor(percent)] : used ? [textFor(used)] : limit ? [textFor(limit)] : [];
   }
   return [textFor(percent ? `${used}/${limit} (${percent})` : `${used}/${limit}`)];
+}
+function withThroughput(content, throughput) {
+  if (!content || !throughput) return content;
+  const parts = [
+    ...content.parts ?? [{ text: content.text }],
+    { text: " \xB7 ", role: "dim" },
+    { text: `${throughput.tokensPerSecond.toFixed(1)} tok/s`, role: "accent" }
+  ];
+  return { ...content, text: parts.map((part) => part.text).join(""), parts };
 }
 function tokensContent(tokens, format, label, display) {
   const unavailable = tokens === void 0;
@@ -4983,6 +4995,109 @@ function runtimeModeFromContext(mode) {
   return "unknown";
 }
 
+// src/data/throughput.ts
+var THROUGHPUT_ENTRY = "pid-footer/throughput";
+function createThroughputDataSource(store, persist, clock = {
+  monotonic: () => performance.now(),
+  wall: () => Date.now()
+}) {
+  let startedAt;
+  return {
+    messageStart(message) {
+      if (message.role === "assistant") startedAt = clock.monotonic();
+    },
+    messageEnd(message) {
+      if (message.role !== "assistant") return;
+      const start = startedAt;
+      startedAt = void 0;
+      if (start === void 0 || message.stopReason === "error" || message.stopReason === "aborted")
+        return;
+      const durationMs = clock.monotonic() - start;
+      const outputTokens = message.usage?.output;
+      if (outputTokens === void 0) return;
+      const record = {
+        outputTokens,
+        durationMs,
+        tokensPerSecond: outputTokens * 1e3 / durationMs,
+        recordedAt: clock.wall()
+      };
+      if (!isThroughputRecord(record)) return;
+      persist(record);
+      store.update({ conversation: { throughput: record } });
+    },
+    restore(entries) {
+      startedAt = void 0;
+      let throughput;
+      for (const entry of entries) {
+        if (!isRecord3(entry) || entry.type !== "custom" || entry.customType !== THROUGHPUT_ENTRY)
+          continue;
+        if (isThroughputRecord(entry.data)) throughput = entry.data;
+      }
+      store.update({ conversation: { throughput } });
+    },
+    shutdown() {
+      startedAt = void 0;
+    }
+  };
+}
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isThroughputRecord(value) {
+  if (!isRecord3(value)) return false;
+  return ["outputTokens", "durationMs", "tokensPerSecond", "recordedAt"].every(
+    (key) => typeof value[key] === "number" && Number.isFinite(value[key]) && value[key] >= 0
+  ) && value.durationMs > 0;
+}
+
+// src/host/widget.ts
+var WIDGET_USAGE_KEY = "pid-footer";
+function wantsWidgets(ctx) {
+  return ctx.hasUI && ctx.mode !== "tui";
+}
+function usagePayload(snapshot) {
+  const throughput = snapshot.conversation.throughput;
+  const usage = snapshot.providerUsage ?? (throughput ? {
+    provider: snapshot.session.provider ?? "",
+    state: "unavailable",
+    windows: []
+  } : void 0);
+  if (!usage) return void 0;
+  const label = snapshot.session.providerLabel;
+  return {
+    ...usage,
+    ...label === void 0 ? {} : { providerLabel: label },
+    ...throughput ? { throughput } : {}
+  };
+}
+function createWidgetPublisher(store) {
+  let unsubscribe;
+  let published;
+  const publish = (ctx) => {
+    const payload = usagePayload(store.getSnapshot());
+    const encoded = payload ? JSON.stringify(payload) : void 0;
+    if (encoded === published) return;
+    published = encoded;
+    ctx.ui.setWidget(WIDGET_USAGE_KEY, encoded === void 0 ? void 0 : [encoded]);
+  };
+  const stop = (ctx) => {
+    unsubscribe?.();
+    unsubscribe = void 0;
+    if (published === void 0) return;
+    published = void 0;
+    if (wantsWidgets(ctx)) ctx.ui.setWidget(WIDGET_USAGE_KEY, void 0);
+  };
+  return {
+    start(ctx) {
+      stop(ctx);
+      if (!wantsWidgets(ctx)) return;
+      publish(ctx);
+      unsubscribe = store.subscribe(() => publish(ctx));
+    },
+    stop
+  };
+}
+
 // src/render/renderer.ts
 var FooterComponent = class {
   store;
@@ -5092,6 +5207,7 @@ function applyPatch(snapshot, patch) {
 function mergeConversation(base, patch) {
   return {
     ...base,
+    ...Object.hasOwn(patch, "throughput") ? { throughput: patch.throughput } : {},
     ...patch.context ? { context: { ...base.context, ...patch.context } } : {},
     ...patch.tokens ? { tokens: { ...base.tokens, ...patch.tokens } } : {},
     ...patch.cache ? { cache: { ...base.cache, ...patch.cache } } : {},
@@ -5102,45 +5218,6 @@ function sameSnapshotData(left, right) {
   const { version: _leftVersion, updatedAt: _leftUpdatedAt, ...leftData } = left;
   const { version: _rightVersion, updatedAt: _rightUpdatedAt, ...rightData } = right;
   return JSON.stringify(leftData) === JSON.stringify(rightData);
-}
-
-// src/host/widget.ts
-var WIDGET_USAGE_KEY = "pid-footer";
-function wantsWidgets(ctx) {
-  return ctx.hasUI && ctx.mode !== "tui";
-}
-function usagePayload(snapshot) {
-  const usage = snapshot.providerUsage;
-  if (!usage) return void 0;
-  const label = snapshot.session.providerLabel;
-  return label === void 0 ? { ...usage } : { ...usage, providerLabel: label };
-}
-function createWidgetPublisher(store) {
-  let unsubscribe;
-  let published;
-  const publish = (ctx) => {
-    const payload = usagePayload(store.getSnapshot());
-    const encoded = payload ? JSON.stringify(payload) : void 0;
-    if (encoded === published) return;
-    published = encoded;
-    ctx.ui.setWidget(WIDGET_USAGE_KEY, encoded === void 0 ? void 0 : [encoded]);
-  };
-  const stop = (ctx) => {
-    unsubscribe?.();
-    unsubscribe = void 0;
-    if (published === void 0) return;
-    published = void 0;
-    if (wantsWidgets(ctx)) ctx.ui.setWidget(WIDGET_USAGE_KEY, void 0);
-  };
-  return {
-    start(ctx) {
-      stop(ctx);
-      if (!wantsWidgets(ctx)) return;
-      publish(ctx);
-      unsubscribe = store.subscribe(() => publish(ctx));
-    },
-    stop
-  };
 }
 
 // src/usage/auth.ts
@@ -5234,7 +5311,7 @@ async function fetchUsageJson(url, auth, signal, timeoutMs, fetchImpl = defaultF
     } catch {
       throw new UsageError("invalid-response", "Usage endpoint returned invalid JSON.");
     }
-    if (!isRecord3(parsed))
+    if (!isRecord4(parsed))
       throw new UsageError("invalid-response", "Usage endpoint returned an invalid object.");
     return parsed;
   } catch (error) {
@@ -5283,7 +5360,7 @@ async function boundedText(response) {
 function defaultFetch(input, init) {
   return fetch(input, init);
 }
-function isRecord3(value) {
+function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -5385,18 +5462,18 @@ function usageCacheKey(provider, fingerprint, model) {
 
 // src/usage/normalize.ts
 function normalizeCodexUsage(payload, now = Date.now()) {
-  if (!isRecord4(payload))
+  if (!isRecord5(payload))
     throw new UsageError("invalid-response", "Codex usage response was not an object.");
   const windows = [];
-  const primary = isRecord4(payload.rate_limit) ? payload.rate_limit : void 0;
+  const primary = isRecord5(payload.rate_limit) ? payload.rate_limit : void 0;
   addCodexGroup(windows, "codex", primary, now);
   if (Array.isArray(payload.additional_rate_limits)) {
     for (const [index, item] of payload.additional_rate_limits.entries()) {
-      if (!isRecord4(item)) continue;
+      if (!isRecord5(item)) continue;
       addCodexGroup(
         windows,
         `additional-${index + 1}`,
-        isRecord4(item.rate_limit) ? item.rate_limit : void 0,
+        isRecord5(item.rate_limit) ? item.rate_limit : void 0,
         now
       );
     }
@@ -5406,7 +5483,7 @@ function normalizeCodexUsage(payload, now = Date.now()) {
   return { provider: "openai-codex", state: "fresh", fetchedAt: now, windows };
 }
 function normalizeOpenCodeUsage(payload, now = Date.now()) {
-  if (!isRecord4(payload) || !isRecord4(payload.usage)) {
+  if (!isRecord5(payload) || !isRecord5(payload.usage)) {
     throw new UsageError("invalid-response", "OpenCode usage response was not an object.");
   }
   const windows = [];
@@ -5416,7 +5493,7 @@ function normalizeOpenCodeUsage(payload, now = Date.now()) {
     ["monthly", "m"]
   ];
   for (const [id, label] of definitions) {
-    const value = isRecord4(payload.usage[id]) ? payload.usage[id] : void 0;
+    const value = isRecord5(payload.usage[id]) ? payload.usage[id] : void 0;
     if (!value) continue;
     const status = asString(value.status);
     if (status !== "ok" && status !== "rate-limited") continue;
@@ -5465,7 +5542,7 @@ function normalizeArkCodingPlanUsage(payload, now = Date.now()) {
   );
 }
 function normalizeArkPlanUsage(payload, provider, productHint, definitions, now) {
-  if (!isRecord4(payload)) {
+  if (!isRecord5(payload)) {
     throw new UsageError(
       "invalid-response",
       `Ark ${productHint} usage response was not an object.`
@@ -5474,15 +5551,15 @@ function normalizeArkPlanUsage(payload, provider, productHint, definitions, now)
   if (!Array.isArray(payload.items)) {
     throw new UsageError("invalid-response", `Ark ${productHint} usage response had no items.`);
   }
-  const item = payload.items.map((candidate) => isRecord4(candidate) ? candidate : void 0).find((candidate) => candidate !== void 0 && candidate.subscribed === true);
+  const item = payload.items.map((candidate) => isRecord5(candidate) ? candidate : void 0).find((candidate) => candidate !== void 0 && candidate.subscribed === true);
   if (!item) {
     throw new UsageError("unsupported", `No active ${productHint} subscription was found.`);
   }
   const windows = [];
   const periods = Array.isArray(item.periods) ? item.periods : [];
   for (const [id, label] of definitions) {
-    const period = periods.find((candidate) => isRecord4(candidate) && candidate.label === id);
-    if (!isRecord4(period)) continue;
+    const period = periods.find((candidate) => isRecord5(candidate) && candidate.label === id);
+    if (!isRecord5(period)) continue;
     const percent = asPercent(period.percent);
     if (percent === void 0) continue;
     const resetAt = asEpochMilliseconds(period.reset_at);
@@ -5509,7 +5586,7 @@ function addCodexGroup(windows, groupId, group, now) {
     ["secondary", "wk"]
   ]) {
     const raw = group[`${position}_window`];
-    const value = isRecord4(raw) ? raw : void 0;
+    const value = isRecord5(raw) ? raw : void 0;
     if (!value) continue;
     const percent = asPercent(value.used_percent);
     if (percent === void 0) continue;
@@ -5555,7 +5632,7 @@ function asEpochMilliseconds(value) {
 function asString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : void 0;
 }
-function isRecord4(value) {
+function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -5609,8 +5686,8 @@ function createArkPlanUsageAdapter(spec) {
       if (payload === void 0) {
         throw new UsageError("invalid-response", "arkcli returned invalid usage JSON.");
       }
-      if (isRecord5(payload) && payload.ok === false) {
-        const message = isRecord5(payload.error) ? asString2(payload.error.message) : void 0;
+      if (isRecord6(payload) && payload.ok === false) {
+        const message = isRecord6(payload.error) ? asString2(payload.error.message) : void 0;
         throw new UsageError(
           arkcliAuthHint(message ?? "") ? "auth" : "network",
           `arkcli could not resolve the ${spec.product} subscription.`
@@ -5645,7 +5722,7 @@ function isMissingCommand(error) {
 function asString2(value) {
   return typeof value === "string" && value.trim() ? value.trim() : void 0;
 }
-function isRecord5(value) {
+function isRecord6(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -5924,6 +6001,10 @@ function pidFooter(pi) {
   const store = createFooterStore();
   const sessionData = createSessionDataSource(store);
   const conversationData = createConversationDataSource(store);
+  let pendingThroughput;
+  const throughputData = createThroughputDataSource(store, (record) => {
+    pendingThroughput = record;
+  });
   const repositoryData = createRepositoryDataSource(store, {
     exec: (command, args, options) => pi.exec(command, args, options)
   });
@@ -6066,12 +6147,14 @@ ${FOOTER_HELP}`, "error");
     }
   });
   pi.on("session_start", (_event, ctx) => {
+    pendingThroughput = void 0;
     stopUsage();
     if (repositoryActive) repositoryData.sessionShutdown();
     repositoryActive = false;
     const loaded = loadConfig({ projectRoot: ctx.cwd });
     sessionData.sessionStart(ctx);
     conversationData.sessionStart(ctx);
+    throughputData.restore(ctx.sessionManager.getBranch());
     activeConfig = loaded.config;
     applyRuntimeConfig(ctx, loaded.config);
   });
@@ -6090,6 +6173,8 @@ ${FOOTER_HELP}`, "error");
     sessionData.agentEnded(ctx);
   });
   pi.on("session_shutdown", (_event, ctx) => {
+    pendingThroughput = void 0;
+    throughputData.shutdown();
     sessionData.sessionShutdown(ctx);
     stopUsage();
     repositoryData.sessionShutdown();
@@ -6098,10 +6183,21 @@ ${FOOTER_HELP}`, "error");
     widgets.stop(ctx);
     if (ctx.mode === "tui") ctx.ui.setFooter(void 0);
   });
+  pi.on("message_start", (event) => {
+    throughputData.messageStart(event.message);
+  });
+  pi.on("message_end", (event, ctx) => {
+    throughputData.messageEnd(event.message);
+    conversationData.refresh(ctx);
+  });
   pi.on("message_update", (_event, ctx) => {
     conversationData.refresh(ctx);
   });
   pi.on("turn_end", (_event, ctx) => {
+    if (pendingThroughput) {
+      pi.appendEntry(THROUGHPUT_ENTRY, pendingThroughput);
+      pendingThroughput = void 0;
+    }
     conversationData.refresh(ctx);
     usageManager?.turnEnded(createUsageContext(ctx));
   });
@@ -6109,6 +6205,8 @@ ${FOOTER_HELP}`, "error");
     conversationData.refresh(ctx);
   });
   pi.on("session_tree", (_event, ctx) => {
+    pendingThroughput = void 0;
+    throughputData.restore(ctx.sessionManager.getBranch());
     conversationData.refresh(ctx);
   });
 }

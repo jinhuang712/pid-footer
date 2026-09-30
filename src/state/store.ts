@@ -92,6 +92,7 @@ function mergeConversation(
 ): ConversationSnapshot {
 	return {
 		...base,
+		...(Object.hasOwn(patch, "throughput") ? { throughput: patch.throughput } : {}),
 		...(patch.context ? { context: { ...base.context, ...patch.context } } : {}),
 		...(patch.tokens ? { tokens: { ...base.tokens, ...patch.tokens } } : {}),
 		...(patch.cache ? { cache: { ...base.cache, ...patch.cache } } : {}),

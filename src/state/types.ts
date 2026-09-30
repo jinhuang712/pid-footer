@@ -63,7 +63,15 @@ export interface CostUsageSnapshot {
 	billingMode?: string;
 }
 
+export interface ThroughputSnapshot {
+	outputTokens: number;
+	durationMs: number;
+	tokensPerSecond: number;
+	recordedAt: number;
+}
+
 export interface ConversationSnapshot {
+	throughput?: ThroughputSnapshot;
 	context?: ContextUsageSnapshot;
 	tokens?: TokenUsageSnapshot;
 	cache?: CacheUsageSnapshot;
@@ -121,6 +129,7 @@ export interface FooterSnapshot {
 }
 
 export interface ConversationSnapshotPatch {
+	throughput?: ThroughputSnapshot;
 	context?: Partial<ContextUsageSnapshot>;
 	tokens?: Partial<TokenUsageSnapshot>;
 	cache?: Partial<CacheUsageSnapshot> & Pick<CacheUsageSnapshot, "state">;

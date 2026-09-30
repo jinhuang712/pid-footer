@@ -60,6 +60,20 @@ describe("usagePayload", () => {
 		expect(payload?.windows.map((w) => w.label)).toEqual(["5H", "7D"]);
 	});
 
+	it("publishes throughput even without provider quota", () => {
+		const store = createFooterStore();
+		const throughput = { outputTokens: 100, durationMs: 2000, tokensPerSecond: 50, recordedAt: 1 };
+		const { ctx, calls } = fakeContext("rpc", true);
+		const publisher = createWidgetPublisher(store);
+		publisher.start(ctx);
+		store.update({ conversation: { throughput } });
+		expect(usagePayload(store.getSnapshot())?.throughput).toEqual(throughput);
+		expect(JSON.parse(calls[0]?.lines?.[0] ?? "{}").throughput).toEqual(throughput);
+		store.update({ conversation: { throughput: undefined } });
+		expect(calls[1]?.lines).toBeUndefined();
+		publisher.stop(ctx);
+	});
+
 	it("is undefined until a reading exists", () => {
 		expect(usagePayload(createEmptySnapshot())).toBeUndefined();
 	});

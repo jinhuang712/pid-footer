@@ -32,7 +32,7 @@ describe("pid-footer extension scaffold", () => {
 				cwd: "/workspace/project",
 				model: { provider: "openai-codex", id: "gpt-5.6" },
 				thinkingLevel: "xhigh",
-				sessionManager: { getEntries: () => [] },
+				sessionManager: { getEntries: () => [], getBranch: () => [] },
 				getContextUsage: () => undefined,
 				ui: {
 					setFooter(factory: (...args: unknown[]) => unknown) {
@@ -64,6 +64,75 @@ describe("pid-footer extension scaffold", () => {
 		}
 	});
 
+	it("persists throughput, renders it within width, and restores the active branch", async () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "pid-footer-test-"));
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		const clock = vi.spyOn(performance, "now");
+		try {
+			const handlers: Record<string, SessionStartHandler> = {};
+			let branch: unknown[] = [];
+			let footerFactory: ((...args: unknown[]) => unknown) | undefined;
+			const appendEntry = vi.fn((customType: string, data: unknown) => {
+				branch.push({ type: "custom", customType, data });
+			});
+			extension({
+				registerCommand() {},
+				on(event: string, handler: SessionStartHandler) {
+					handlers[event] = handler;
+				},
+				appendEntry,
+				exec: async () => ({ stdout: "", stderr: "", code: 128, killed: false }),
+			} as never);
+			const context = {
+				mode: "tui",
+				cwd: "/workspace/project",
+				thinkingLevel: "off",
+				sessionManager: { getEntries: () => [], getBranch: () => branch },
+				getContextUsage: () => undefined,
+				ui: {
+					setFooter(factory: (...args: unknown[]) => unknown) {
+						footerFactory = factory;
+					},
+				},
+			};
+			await handlers.session_start?.({}, context);
+			const component = footerFactory?.({ requestRender() {} }, {}, {}) as {
+				render(width: number): string[];
+			};
+			clock.mockReturnValue(1000);
+			await handlers.message_start?.({ message: { role: "assistant" } }, context);
+			clock.mockReturnValue(3000);
+			await handlers.message_end?.(
+				{ message: { role: "assistant", stopReason: "stop", usage: { output: 100 } } },
+				context,
+			);
+			expect(appendEntry).not.toHaveBeenCalled();
+			await handlers.turn_end?.({}, context);
+			expect(appendEntry).toHaveBeenCalledWith(
+				"pid-footer/throughput",
+				expect.objectContaining({ tokensPerSecond: 50 }),
+			);
+			expect(component.render(120).join("\n")).toContain("50.0 tok/s");
+			for (const width of [40, 60, 80, 120]) {
+				for (const line of component.render(width)) expect(line.length).toBeLessThanOrEqual(width);
+			}
+			const saved = [...branch];
+			branch = [];
+			await handlers.session_tree?.({}, context);
+			expect(component.render(120).join("\n")).not.toContain("tok/s");
+			branch = saved;
+			await handlers.session_tree?.({}, context);
+			expect(component.render(120).join("\n")).toContain("50.0 tok/s");
+			await handlers.session_shutdown?.({}, context);
+		} finally {
+			clock.mockRestore();
+			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			rmSync(agentDir, { recursive: true, force: true });
+		}
+	});
+
 	it("refreshes context limits when the selected model changes", async () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "pid-footer-test-"));
 		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -86,7 +155,7 @@ describe("pid-footer extension scaffold", () => {
 				cwd: "/workspace/project",
 				model: { provider: "openai-codex", id: "gpt-5.6" },
 				thinkingLevel: "off",
-				sessionManager: { getEntries: () => [] },
+				sessionManager: { getEntries: () => [], getBranch: () => [] },
 				getContextUsage: () => ({ tokens: 10_000, contextWindow }),
 				ui: {
 					setFooter(factory: (...args: unknown[]) => unknown) {
@@ -130,7 +199,7 @@ describe("pid-footer extension scaffold", () => {
 				cwd: "/workspace/project",
 				model: undefined,
 				thinkingLevel: "off",
-				sessionManager: { getEntries: () => [] },
+				sessionManager: { getEntries: () => [], getBranch: () => [] },
 				getContextUsage: () => undefined,
 				ui: { setFooter() {} },
 			};
@@ -180,7 +249,7 @@ describe("pid-footer extension scaffold", () => {
 				},
 				thinkingLevel: "off",
 				hasUI: false,
-				sessionManager: { getEntries: () => [] },
+				sessionManager: { getEntries: () => [], getBranch: () => [] },
 				getContextUsage: () => undefined,
 				ui: { setFooter() {}, notify() {} },
 			};
@@ -221,7 +290,7 @@ describe("pid-footer extension scaffold", () => {
 				cwd: "/workspace/project",
 				model: undefined,
 				thinkingLevel: "off",
-				sessionManager: { getEntries: () => [] },
+				sessionManager: { getEntries: () => [], getBranch: () => [] },
 				getContextUsage: () => undefined,
 				ui: {
 					setFooter() {

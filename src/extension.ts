@@ -17,6 +17,8 @@ import type { FooterConfig } from "./config/types.js";
 import { createConversationDataSource } from "./data/conversation.js";
 import { createRepositoryDataSource } from "./data/repository.js";
 import { createSessionDataSource } from "./data/session.js";
+import { createThroughputDataSource, THROUGHPUT_ENTRY } from "./data/throughput.js";
+import { createWidgetPublisher } from "./host/widget.js";
 import { FooterComponent } from "./render/index.js";
 import {
 	editLayoutSettings,
@@ -25,7 +27,7 @@ import {
 	selectSettings,
 } from "./settings-ui.js";
 import { createFooterStore } from "./state/store.js";
-import { createWidgetPublisher } from "./host/widget.js";
+import type { ThroughputSnapshot } from "./state/types.js";
 import { resolveRuntimeUsageAuth } from "./usage/auth.js";
 import { createUsageManager } from "./usage/manager.js";
 import type { UsageManager, UsageSessionContext } from "./usage/types.js";
@@ -34,6 +36,10 @@ export default function pidFooter(pi: ExtensionAPI): void {
 	const store = createFooterStore();
 	const sessionData = createSessionDataSource(store);
 	const conversationData = createConversationDataSource(store);
+	let pendingThroughput: ThroughputSnapshot | undefined;
+	const throughputData = createThroughputDataSource(store, (record) => {
+		pendingThroughput = record;
+	});
 	const repositoryData = createRepositoryDataSource(store, {
 		exec: (command, args, options) => pi.exec(command, args, options),
 	});
@@ -71,7 +77,6 @@ export default function pidFooter(pi: ExtensionAPI): void {
 		if (config.enabled) widgets.start(ctx);
 		else widgets.stop(ctx);
 	};
-
 
 	const applyRuntimeConfig = (ctx: ExtensionContext, config: FooterConfig) => {
 		activeConfig = config;
@@ -212,12 +217,14 @@ export default function pidFooter(pi: ExtensionAPI): void {
 	// The pipeline runs in every host. Only the presentation differs, and `installPresentation` is
 	// where that is decided.
 	pi.on("session_start", (_event, ctx) => {
+		pendingThroughput = undefined;
 		stopUsage();
 		if (repositoryActive) repositoryData.sessionShutdown();
 		repositoryActive = false;
 		const loaded = loadConfig({ projectRoot: ctx.cwd });
 		sessionData.sessionStart(ctx);
 		conversationData.sessionStart(ctx);
+		throughputData.restore(ctx.sessionManager.getBranch());
 		activeConfig = loaded.config;
 		applyRuntimeConfig(ctx, loaded.config);
 	});
@@ -243,6 +250,8 @@ export default function pidFooter(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
+		pendingThroughput = undefined;
+		throughputData.shutdown();
 		sessionData.sessionShutdown(ctx);
 		stopUsage();
 		repositoryData.sessionShutdown();
@@ -252,11 +261,26 @@ export default function pidFooter(pi: ExtensionAPI): void {
 		if (ctx.mode === "tui") ctx.ui.setFooter(undefined);
 	});
 
+	pi.on("message_start", (event) => {
+		throughputData.messageStart(event.message);
+	});
+
+	pi.on("message_end", (event, ctx) => {
+		throughputData.messageEnd(event.message);
+		conversationData.refresh(ctx);
+	});
+
 	pi.on("message_update", (_event, ctx) => {
 		conversationData.refresh(ctx);
 	});
 
 	pi.on("turn_end", (_event, ctx) => {
+		// message_end handlers run before Pi persists the assistant message.
+		// Append afterward so this record belongs below the reply in the session tree.
+		if (pendingThroughput) {
+			pi.appendEntry(THROUGHPUT_ENTRY, pendingThroughput);
+			pendingThroughput = undefined;
+		}
 		conversationData.refresh(ctx);
 		usageManager?.turnEnded(createUsageContext(ctx));
 	});
@@ -266,6 +290,8 @@ export default function pidFooter(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_tree", (_event, ctx) => {
+		pendingThroughput = undefined;
+		throughputData.restore(ctx.sessionManager.getBranch());
 		conversationData.refresh(ctx);
 	});
 }
