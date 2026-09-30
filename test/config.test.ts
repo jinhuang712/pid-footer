@@ -50,6 +50,26 @@ describe("config defaults", () => {
 });
 
 describe("legacy layout compatibility", () => {
+	it("preserves old custom rows and starts unconfigured Speed Off", () => {
+		const result = normalizeConfig({
+			layout: { rows: [{ id: "session", left: ["tokens"], right: ["cache"] }] },
+		});
+		expect(result.config.segments.speed.enabled).toBe(false);
+		expect(result.config.layout.rows[0]?.left).toEqual(["tokens"]);
+		expect(result.diagnostics).toEqual([]);
+	});
+
+	it("round trips explicit Speed settings and placements", () => {
+		const result = normalizeConfig({
+			layout: { rows: [{ id: "session", left: ["speed"], right: ["tokens"] }] },
+			segments: { speed: { enabled: true, label: "Rate" } },
+		});
+		expect(result.config.segments.speed).toEqual({ enabled: true, label: "Rate" });
+		expect(result.diagnostics).toEqual([]);
+		expect(normalizeConfig(JSON.parse(serializeConfig(result.config))).config).toEqual(
+			result.config,
+		);
+	});
 	it("keeps an explicit separate identity layout intact", () => {
 		const result = normalizeConfig({
 			layout: {

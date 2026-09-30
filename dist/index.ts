@@ -16,6 +16,7 @@ var SEGMENT_IDS = [
   "git",
   "context",
   "tokens",
+  "speed",
   "cache",
   "cost",
   "tools",
@@ -98,14 +99,14 @@ var PREFERRED_LAYOUT = {
     row("project", ["cwd"], ["identity"]),
     row("git", ["git"], ["context"]),
     row("usage", ["provider_usage"], ["cost"], "when-available"),
-    row("session", ["tokens"], ["cache"]),
+    row("session", ["tokens", "speed"], ["cache"]),
     row("extensions", ["extensions"], [], "when-nonempty")
   ]
 };
 var COMPACT_LAYOUT = {
   rows: [
     row("overview", ["cwd", "git"], ["identity", "context"]),
-    row("session", ["provider_usage"], ["tokens", "cache", "cost"])
+    row("session", ["provider_usage"], ["tokens", "speed", "cache", "cost"])
   ]
 };
 var PRESET_LAYOUTS = {
@@ -126,6 +127,7 @@ var SEGMENT_DEFAULTS = {
   // Cache survives narrowing longer than Tokens: a silent cache miss is more
   // costly to notice than losing the raw token counters.
   tokens: { priority: 45, required: false },
+  speed: { priority: 50, required: false },
   cache: { priority: 65, required: false },
   cost: { priority: 70, required: false },
   tools: { priority: 60, required: false },
@@ -787,6 +789,7 @@ var SEGMENT_LABELS = {
   git: "Git",
   context: "Context",
   tokens: "Tokens",
+  speed: "Speed",
   cache: "Cache",
   cost: "Cost",
   tools: "Tool",
@@ -802,6 +805,7 @@ var SEGMENT_EXAMPLES = {
   git: "main \xB7 dirty",
   context: "261k/1.0m (25.5%)",
   tokens: "input \u2193 901k \xB7 output \u2191 63k",
+  speed: "42.5 tok/s",
   cache: "read 19.7m \xB7 write 0 \xB7 hit 99.3%",
   cost: "$0.123",
   tools: "Read",
@@ -852,6 +856,7 @@ function compactPreview(id) {
     git: "main \xB7 dirty",
     context: "64.4%",
     tokens: "964k",
+    speed: "42.5 tok/s",
     cache: "19.7mr 0w 99.3% hit",
     cost: "$0.123",
     tools: "Read",
@@ -925,6 +930,7 @@ var DEFAULT_LABELS = {
   git: "Git",
   context: "Context",
   tokens: "Tokens",
+  speed: "Speed",
   cache: "Cache",
   cost: "Cost",
   tools: "Tool",
@@ -975,16 +981,22 @@ var BUILTIN_SEGMENTS = [
   ),
   builtin(
     "tokens",
-    ({ snapshot, format, label, display }) => withThroughput(
-      tokensContent(
-        snapshot.conversation.tokens,
-        format,
-        label,
-        display
-      ),
-      snapshot.conversation.throughput
+    ({ snapshot, format, label, display }) => tokensContent(
+      snapshot.conversation.tokens,
+      format,
+      label,
+      display
     )
   ),
+  builtin("speed", ({ snapshot, format, label }) => {
+    const throughput = snapshot.conversation.throughput;
+    return throughput ? displayContent(
+      label ?? DEFAULT_LABELS.speed,
+      `${throughput.tokensPerSecond.toFixed(1)} tok/s`,
+      format,
+      "accent"
+    ) : void 0;
+  }),
   builtin(
     "cache",
     ({ snapshot, format, label, display }) => cacheContent(
@@ -1296,15 +1308,6 @@ function styledContextParts(context, display, thresholds) {
     return percent ? [textFor(percent)] : used ? [textFor(used)] : limit ? [textFor(limit)] : [];
   }
   return [textFor(percent ? `${used}/${limit} (${percent})` : `${used}/${limit}`)];
-}
-function withThroughput(content, throughput) {
-  if (!content || !throughput) return content;
-  const parts = [
-    ...content.parts ?? [{ text: content.text }],
-    { text: " \xB7 ", role: "dim" },
-    { text: `${throughput.tokensPerSecond.toFixed(1)} tok/s`, role: "accent" }
-  ];
-  return { ...content, text: parts.map((part) => part.text).join(""), parts };
 }
 function tokensContent(tokens, format, label, display) {
   const unavailable = tokens === void 0;
@@ -2515,6 +2518,7 @@ var CATEGORY_HIGHLIGHTS = {
   Context: ["context"],
   Cache: ["cache"],
   Tokens: ["tokens"],
+  Speed: ["speed"],
   Cost: ["cost"],
   Layout: SEGMENT_IDS
 };
@@ -2588,6 +2592,7 @@ function createSamplePreviewSnapshot(config) {
     conversation: {
       context: { usedTokens: 175e3, limitTokens: 272e3, usedPercent: 64.4 },
       tokens: { input: 901e3, output: 63e3 },
+      throughput: { outputTokens: 85, durationMs: 2e3, tokensPerSecond: 42.5, recordedAt: 0 },
       cache: { read: 197e5, write: 0, hitPercent: 99.3, state: "hit" },
       cost: { input: 0.012, output: 0.083, cacheRead: 0.025, cacheWrite: 3e-3, total: 0.123 }
     },
@@ -2874,6 +2879,7 @@ var CATEGORIES = [
   },
   simpleSegmentCategory("cache", "Cache", "Show Cache", "Show Cache \xB7 Label"),
   simpleSegmentCategory("tokens", "Tokens", "Show Tokens", "Show Tokens \xB7 Display \xB7 Label"),
+  simpleSegmentCategory("speed", "Speed", "Show Speed", "Show Speed \xB7 Label"),
   simpleSegmentCategory("cost", "Cost", "Show Cost", "Show Cost \xB7 Display \xB7 Notation \xB7 Label"),
   {
     title: "Layout",
@@ -2895,6 +2901,7 @@ var LAYOUT_SEGMENT_LABELS = {
   git: "Git",
   context: "Context",
   tokens: "Token",
+  speed: "Speed",
   cache: "Cache",
   cost: "Cost",
   tools: "Tools",
@@ -3047,6 +3054,7 @@ async function rootMenu(config, ui, status, commit) {
         "Context",
         "Cache",
         "Tokens",
+        "Speed",
         "Cost"
       ].includes(category2.title)
     ).map((category2) => lockWhenDisabled(categoryRow(category2), componentsLocked));
@@ -3785,7 +3793,7 @@ function segmentRow(segmentId) {
   if (segmentId === "provider_usage") return "usage";
   if (segmentId === "extensions") return "extensions";
   if (segmentId === "context") return "git";
-  if (segmentId === "tokens" || segmentId === "cache") return "session";
+  if (segmentId === "tokens" || segmentId === "speed" || segmentId === "cache") return "session";
   if (segmentId === "cost") return "usage";
   return "project";
 }
@@ -3929,6 +3937,9 @@ function normalizeConfig(value, base) {
     if (layout) config.layout = layout;
   }
   if (hasExplicitLayout) config.preset = "custom";
+  if (hasExplicitLayout && !config.layout.rows.some((row2) => [...row2.left, ...row2.right].includes("speed")) && (!isRecord(value.segments) || value.segments.speed === void 0)) {
+    config.segments.speed.enabled = false;
+  }
   const presetLocked = config.preset !== "custom";
   if (value.style !== void 0) normalizeStyle(value.style, config, diagnostics, presetLocked);
   if (value.segments !== void 0)
@@ -5055,8 +5066,8 @@ var WIDGET_USAGE_KEY = "pid-footer";
 function wantsWidgets(ctx) {
   return ctx.hasUI && ctx.mode !== "tui";
 }
-function usagePayload(snapshot) {
-  const throughput = snapshot.conversation.throughput;
+function usagePayload(snapshot, showSpeed = true) {
+  const throughput = showSpeed ? snapshot.conversation.throughput : void 0;
   const usage = snapshot.providerUsage ?? (throughput ? {
     provider: snapshot.session.provider ?? "",
     state: "unavailable",
@@ -5070,11 +5081,11 @@ function usagePayload(snapshot) {
     ...throughput ? { throughput } : {}
   };
 }
-function createWidgetPublisher(store) {
+function createWidgetPublisher(store, showSpeed = () => true) {
   let unsubscribe;
   let published;
   const publish = (ctx) => {
-    const payload = usagePayload(store.getSnapshot());
+    const payload = usagePayload(store.getSnapshot(), showSpeed());
     const encoded = payload ? JSON.stringify(payload) : void 0;
     if (encoded === published) return;
     published = encoded;
@@ -6010,7 +6021,7 @@ function pidFooter(pi) {
   });
   let usageManager;
   let activeConfig;
-  const widgets = createWidgetPublisher(store);
+  const widgets = createWidgetPublisher(store, () => activeConfig?.segments.speed.enabled ?? true);
   let repositoryActive = false;
   const stopUsage = () => {
     usageManager?.sessionShutdown();

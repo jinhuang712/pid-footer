@@ -45,7 +45,10 @@ See [FEATURES](./docs/FEATURES.md) for the capability guide.
 
 ## Output speed
 
-The Tokens Segment shows the latest measured reply speed, e.g. `Tokens: ↓108k ↑4.9k · 42.5 tok/s`.
+The independent Speed component shows the latest measured reply speed: `Speed: 42.5 tok/s`.
+After `/reload`, open `/footer` → **Components** → **Speed** → **Show Speed: On**.
+Choose **Mode → Custom** first if preset settings are locked. Use **Layout** to move Speed
+independently of Tokens; the Speed submenu also lets you change its label.
 This is the provider's final output token count divided by the time from assistant message start
 to completion, including reasoning but excluding tool execution. Pi starts timing at the provider's
 stream-start event, so earlier connection/response waiting may be excluded. This is a message-phase
@@ -54,7 +57,10 @@ average, not a full-request or pure decoding benchmark, and not a live estimate.
 Measurements are saved as non-context session entries and restored from the active branch on
 reload or tree navigation. Failed/aborted replies do not replace the last valid measurement;
 older sessions without measurements show no speed. The desktop Footer also displays the rate,
-even for providers without quota monitoring. Hide Tokens to hide the rate in the terminal.
+even for providers without quota monitoring. Show Speed controls it independently of Tokens.
+Existing custom layouts are preserved and start with Speed off if it was not configured;
+enabling Speed automatically adds it to the session row. A completed reply is needed before
+a real rate appears; the settings preview uses an example when no runtime snapshot is supplied.
 
 ## Provider Usage Monitor
 

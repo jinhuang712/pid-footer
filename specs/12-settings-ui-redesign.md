@@ -529,6 +529,14 @@ Cost        当前会话费用
 
 ---
 
+### 13.1 Speed
+
+Components 增加独立的 `Speed` 分类：`Show Speed`（On / Off）和 `Label`（默认 Speed）。
+示例为 `Speed: 42.5 tok/s`，与 Tokens 消耗计数独立；无有效测速记录时实际 Footer 隐藏它，
+分类说明和代表性预览仍展示示例。Custom 下修改后即时保存，失败回滚；Preset 下详情只读。
+Show Speed: On 自动把 `speed` 放入 session 行左组；Off 从所有行移除它。Layout 画布使用
+`Speed` 标签，支持独立移动、左右对齐和排序。旧布局不会自动被改写，未配置 Speed 时从 Off 开始。
+
 ## 14. Cost
 
 ```text

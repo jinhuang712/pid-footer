@@ -31,8 +31,11 @@ export function wantsWidgets(ctx: ExtensionContext): boolean {
 	return ctx.hasUI && ctx.mode !== "tui";
 }
 
-export function usagePayload(snapshot: FooterSnapshot): UsageWidgetPayload | undefined {
-	const throughput = snapshot.conversation.throughput;
+export function usagePayload(
+	snapshot: FooterSnapshot,
+	showSpeed = true,
+): UsageWidgetPayload | undefined {
+	const throughput = showSpeed ? snapshot.conversation.throughput : undefined;
 	const usage =
 		snapshot.providerUsage ??
 		(throughput
@@ -57,13 +60,16 @@ export interface WidgetPublisher {
 	stop(ctx: ExtensionContext): void;
 }
 
-export function createWidgetPublisher(store: FooterStore): WidgetPublisher {
+export function createWidgetPublisher(
+	store: FooterStore,
+	showSpeed: () => boolean = () => true,
+): WidgetPublisher {
 	let unsubscribe: (() => void) | undefined;
 	// The store publishes on every token during a turn; only a changed payload is worth a message.
 	let published: string | undefined;
 
 	const publish = (ctx: ExtensionContext): void => {
-		const payload = usagePayload(store.getSnapshot());
+		const payload = usagePayload(store.getSnapshot(), showSpeed());
 		const encoded = payload ? JSON.stringify(payload) : undefined;
 		if (encoded === published) return;
 		published = encoded;

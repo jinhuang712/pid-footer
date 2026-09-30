@@ -12,6 +12,7 @@ export const SEGMENT_IDS = [
 	"git",
 	"context",
 	"tokens",
+	"speed",
 	"cache",
 	"cost",
 	"tools",

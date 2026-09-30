@@ -104,7 +104,7 @@ Arrays such as `layout.rows` SHOULD be replaced as a whole at the overriding lay
       },
       {
         "id": "session",
-        "left": ["tokens"],
+        "left": ["tokens", "speed"],
         "right": ["cache"]
       },
       {
@@ -177,6 +177,11 @@ Segments expose a small, declarative configuration surface. The settings UI and 
 }
 ```
 
+`speed` uses only `enabled` and `label`, displays the last valid output `tok/s`, and is independent
+from `tokens`. Components exposes Speed (Show Speed / Label); Layout places it like any other
+Segment. Old explicit layouts are preserved; without a Speed setting or placement it starts Off.
+Enabling it through the menu adds it to the session row.
+
 Common Segment fields are limited to:
 
 ```text
@@ -244,7 +249,7 @@ Opens a hierarchical interactive configuration menu when a TUI is available. Pre
 The root menu SHOULD expose:
 
 - A live representative Footer preview rendered from the current draft Snapshot and width, so users see the effect of changes without leaving the settings menu. The preview MUST be plain-text safe (no raw ANSI) and MUST update after every confirmed choice.
-- Four tabs below a separator after the preview: `General` (`Footer`, `Mode`, and the project override gate), `Components` (`Project`, `Git`, `Models & Providers`, `Usage`, `Context`, `Cache`, `Tokens`, `Cost`), `Layout` (activating the tab opens the row canvas without a duplicate category row), and `Appearance` (`Detail level`, `Color`, `Icons`, and `Separator`).
+- Four tabs below a separator after the preview: `General` (`Footer`, `Mode`, and the project override gate), `Components` (`Project`, `Git`, `Models & Providers`, `Usage`, `Context`, `Cache`, `Tokens`, `Speed`, `Cost`), `Layout` (activating the tab opens the row canvas without a duplicate category row), and `Appearance` (`Detail level`, `Color`, `Icons`, and `Separator`).
 - Mode: `compact`, `balanced`, `detailed`, or `custom`, with an example of the resulting shape.
 - Preset-owned entries (Layout, Segments, Context, Label style) when the active mode is `custom`.
 - Provider Usage windows.

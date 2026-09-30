@@ -16,7 +16,6 @@ import type {
 	CostUsageSnapshot,
 	ProviderUsageSnapshot,
 	RepositorySnapshot,
-	ThroughputSnapshot,
 	UsageWindowSnapshot,
 } from "../state/types.js";
 import {
@@ -54,6 +53,7 @@ const DEFAULT_LABELS: Record<SegmentId, string> = {
 	git: "Git",
 	context: "Context",
 	tokens: "Tokens",
+	speed: "Speed",
 	cache: "Cache",
 	cost: "Cost",
 	tools: "Tool",
@@ -120,16 +120,24 @@ export const BUILTIN_SEGMENTS: readonly FooterSegment[] = [
 		),
 	),
 	builtin("tokens", ({ snapshot, format, label, display }) =>
-		withThroughput(
-			tokensContent(
-				snapshot.conversation.tokens,
-				format,
-				label,
-				display as TokenDisplayStyle | undefined,
-			),
-			snapshot.conversation.throughput,
+		tokensContent(
+			snapshot.conversation.tokens,
+			format,
+			label,
+			display as TokenDisplayStyle | undefined,
 		),
 	),
+	builtin("speed", ({ snapshot, format, label }) => {
+		const throughput = snapshot.conversation.throughput;
+		return throughput
+			? displayContent(
+					label ?? DEFAULT_LABELS.speed,
+					`${throughput.tokensPerSecond.toFixed(1)} tok/s`,
+					format,
+					"accent",
+				)
+			: undefined;
+	}),
 	builtin("cache", ({ snapshot, format, label, display }) =>
 		cacheContent(
 			snapshot.conversation.cache,
@@ -545,19 +553,6 @@ function styledContextParts(
 		return percent ? [textFor(percent)] : used ? [textFor(used)] : limit ? [textFor(limit)] : [];
 	}
 	return [textFor(percent ? `${used}/${limit} (${percent})` : `${used}/${limit}`)];
-}
-
-function withThroughput(
-	content: SegmentContent | undefined,
-	throughput: ThroughputSnapshot | undefined,
-): SegmentContent | undefined {
-	if (!content || !throughput) return content;
-	const parts: SegmentContentPart[] = [
-		...(content.parts ?? [{ text: content.text }]),
-		{ text: " · ", role: "dim" },
-		{ text: `${throughput.tokensPerSecond.toFixed(1)} tok/s`, role: "accent" },
-	];
-	return { ...content, text: parts.map((part) => part.text).join(""), parts };
 }
 
 function tokensContent(

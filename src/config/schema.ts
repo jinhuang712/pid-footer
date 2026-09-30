@@ -161,6 +161,15 @@ export function normalizeConfig(value: unknown, base?: FooterConfig): Normalized
 		if (layout) config.layout = layout;
 	}
 	if (hasExplicitLayout) config.preset = "custom";
+	// Do not insert new components into a user's existing explicit layout.
+	// An absent Speed placement/setting starts Off, so enabling it in the UI adds it.
+	if (
+		hasExplicitLayout &&
+		!config.layout.rows.some((row) => [...row.left, ...row.right].includes("speed")) &&
+		(!isRecord(value.segments) || value.segments.speed === undefined)
+	) {
+		config.segments.speed.enabled = false;
+	}
 	const presetLocked = config.preset !== "custom";
 
 	if (value.style !== undefined) normalizeStyle(value.style, config, diagnostics, presetLocked);

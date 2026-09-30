@@ -179,6 +179,7 @@ interface ResolvedSegment {
 | `thinking` | Thinking level | When non-empty | 40 |
 | `context` | Context used/limit/percent | Required when available | 100 |
 | `tokens` | Input/output tokens | Always when enabled (zero before first usage) | 55 |
+| `speed` | Latest reply output tokens per second | When a valid measurement exists | 50 |
 | `cache` | Cache read/write/hit state | Always when enabled (zero before first usage) | 45 |
 | `cost` | Current session cost | Balanced/detailed | 65 |
 | `tools` | Active tool | Streaming only by default | 60 |
@@ -228,10 +229,13 @@ outside model context, after Pi has saved the assistant reply so the record cann
 record; switching sessions without records clears it. Shutdown discards incomplete timing.
 Old sessions without measurements do not invent historical rates.
 
-The existing Tokens Segment appends `· 42.5 tok/s` in every display mode when available, using
-an accent role. Disabling Tokens hides the rate in the terminal too. Responsive fitting remains
-unchanged. The desktop quota payload includes an optional `throughput` field and may show the
-rate without a supported quota provider. No new configuration field or dependency is needed.
+The independent `speed` Segment shows `Speed: 42.5 tok/s` in an accent role, without changing
+Tokens. `/footer` exposes Speed under Components with Show Speed and Label; Layout places it
+independently. New profiles place it beside Tokens in the session row. Old explicit layouts remain
+unchanged; when neither a Speed setting nor placement exists, Speed starts disabled and can be
+added by Show Speed: On. Like other components, built-in preset settings are read-only.
+The desktop quota payload retains its optional `throughput` field, filtered by Show Speed, and
+may show the rate without a supported quota provider. No dependency is needed.
 
 ## 7. Extension status integration
 

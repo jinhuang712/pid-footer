@@ -29,7 +29,7 @@ const PREFERRED_LAYOUT: FooterLayoutConfig = {
 		row("project", ["cwd"], ["identity"]),
 		row("git", ["git"], ["context"]),
 		row("usage", ["provider_usage"], ["cost"], "when-available"),
-		row("session", ["tokens"], ["cache"]),
+		row("session", ["tokens", "speed"], ["cache"]),
 		row("extensions", ["extensions"], [], "when-nonempty"),
 	],
 };
@@ -39,7 +39,7 @@ const PREFERRED_LAYOUT: FooterLayoutConfig = {
 const COMPACT_LAYOUT: FooterLayoutConfig = {
 	rows: [
 		row("overview", ["cwd", "git"], ["identity", "context"]),
-		row("session", ["provider_usage"], ["tokens", "cache", "cost"]),
+		row("session", ["provider_usage"], ["tokens", "speed", "cache", "cost"]),
 	],
 };
 
@@ -63,6 +63,7 @@ export const SEGMENT_DEFAULTS: Record<SegmentId, SegmentBuiltInDefaults> = {
 	// Cache survives narrowing longer than Tokens: a silent cache miss is more
 	// costly to notice than losing the raw token counters.
 	tokens: { priority: 45, required: false },
+	speed: { priority: 50, required: false },
 	cache: { priority: 65, required: false },
 	cost: { priority: 70, required: false },
 	tools: { priority: 60, required: false },

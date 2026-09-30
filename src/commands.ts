@@ -233,6 +233,7 @@ const CATEGORY_HIGHLIGHTS: Record<string, readonly SegmentId[]> = {
 	Context: ["context"],
 	Cache: ["cache"],
 	Tokens: ["tokens"],
+	Speed: ["speed"],
 	Cost: ["cost"],
 	Layout: SEGMENT_IDS,
 };
@@ -320,6 +321,7 @@ function createSamplePreviewSnapshot(config: FooterConfig): FooterSnapshot {
 		conversation: {
 			context: { usedTokens: 175_000, limitTokens: 272_000, usedPercent: 64.4 },
 			tokens: { input: 901_000, output: 63_000 },
+			throughput: { outputTokens: 85, durationMs: 2000, tokensPerSecond: 42.5, recordedAt: 0 },
 			cache: { read: 19_700_000, write: 0, hitPercent: 99.3, state: "hit" },
 			cost: { input: 0.012, output: 0.083, cacheRead: 0.025, cacheWrite: 0.003, total: 0.123 },
 		},
@@ -721,6 +723,7 @@ const CATEGORIES: readonly Category[] = [
 	},
 	simpleSegmentCategory("cache", "Cache", "Show Cache", "Show Cache · Label"),
 	simpleSegmentCategory("tokens", "Tokens", "Show Tokens", "Show Tokens · Display · Label"),
+	simpleSegmentCategory("speed", "Speed", "Show Speed", "Show Speed · Label"),
 	simpleSegmentCategory("cost", "Cost", "Show Cost", "Show Cost · Display · Notation · Label"),
 	{
 		title: "Layout",
@@ -748,6 +751,7 @@ const LAYOUT_SEGMENT_LABELS: Partial<Record<SegmentId, string>> = {
 	git: "Git",
 	context: "Context",
 	tokens: "Token",
+	speed: "Speed",
 	cache: "Cache",
 	cost: "Cost",
 	tools: "Tools",
@@ -938,6 +942,7 @@ async function rootMenu(
 				"Context",
 				"Cache",
 				"Tokens",
+				"Speed",
 				"Cost",
 			].includes(category.title),
 		).map((category) => lockWhenDisabled(categoryRow(category), componentsLocked));
@@ -1801,7 +1806,7 @@ function segmentRow(segmentId: SegmentId): string {
 	if (segmentId === "provider_usage") return "usage";
 	if (segmentId === "extensions") return "extensions";
 	if (segmentId === "context") return "git";
-	if (segmentId === "tokens" || segmentId === "cache") return "session";
+	if (segmentId === "tokens" || segmentId === "speed" || segmentId === "cache") return "session";
 	if (segmentId === "cost") return "usage";
 	return "project";
 }

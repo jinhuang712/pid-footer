@@ -74,6 +74,20 @@ describe("usagePayload", () => {
 		publisher.stop(ctx);
 	});
 
+	it("omits throughput when Show Speed is Off without hiding provider quota", () => {
+		const store = storeWithUsage();
+		store.update({
+			conversation: {
+				throughput: { outputTokens: 100, durationMs: 2000, tokensPerSecond: 50, recordedAt: 1 },
+			},
+		});
+		const { ctx, calls } = fakeContext("rpc", true);
+		createWidgetPublisher(store, () => false).start(ctx);
+		expect(usagePayload(store.getSnapshot(), false)?.throughput).toBeUndefined();
+		expect(JSON.parse(calls[0]?.lines?.[0] ?? "{}").provider).toBe("opencode-go");
+		expect(JSON.parse(calls[0]?.lines?.[0] ?? "{}").throughput).toBeUndefined();
+	});
+
 	it("is undefined until a reading exists", () => {
 		expect(usagePayload(createEmptySnapshot())).toBeUndefined();
 	});

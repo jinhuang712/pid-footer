@@ -45,7 +45,7 @@ export default function pidFooter(pi: ExtensionAPI): void {
 	});
 	let usageManager: UsageManager | undefined;
 	let activeConfig: FooterConfig | undefined;
-	const widgets = createWidgetPublisher(store);
+	const widgets = createWidgetPublisher(store, () => activeConfig?.segments.speed.enabled ?? true);
 	let repositoryActive = false;
 
 	const stopUsage = () => {

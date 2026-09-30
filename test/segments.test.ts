@@ -44,7 +44,7 @@ describe("segment formatters", () => {
 
 describe("builtin Segment Registry", () => {
 	it.each(["compact", "standard", "full"] as const)(
-		"appends throughput in %s Token display",
+		"renders Speed independently of %s Token display",
 		(display) => {
 			const config = createDefaultConfig();
 			config.segments.tokens.display = display;
@@ -54,13 +54,22 @@ describe("builtin Segment Registry", () => {
 					throughput: { outputTokens: 100, durationMs: 2000, tokensPerSecond: 50, recordedAt: 1 },
 				},
 			});
-			const segment = resolveSegments(snapshot, config, ["tokens"])[0];
-			expect(segment?.text).toContain("50.0 tok/s");
-			expect(segment?.compactText).toContain("50.0 tok/s");
+			const segment = resolveSegments(snapshot, config, ["speed"])[0];
+			expect(segment?.text).toBe("Speed: 50.0 tok/s");
+			expect(segment?.compactText).toBe("50.0 tok/s");
+			expect(resolveSegments(snapshot, config, ["tokens"])[0]?.text).not.toContain("tok/s");
 			config.segments.tokens.enabled = false;
-			expect(resolveSegments(snapshot, config, ["tokens"])).toEqual([]);
+			expect(resolveSegments(snapshot, config, ["speed"])[0]?.text).toBe("Speed: 50.0 tok/s");
+			config.segments.speed.label = "Rate";
+			expect(resolveSegments(snapshot, config, ["speed"])[0]?.text).toBe("Rate: 50.0 tok/s");
+			config.segments.speed.enabled = false;
+			expect(resolveSegments(snapshot, config, ["speed"])).toEqual([]);
 		},
 	);
+	it("hides Speed until a valid measurement exists", () => {
+		expect(resolveSegments(createEmptySnapshot(), createDefaultConfig(), ["speed"])).toEqual([]);
+	});
+
 	it("exposes metadata-driven previews for every built-in Segment", () => {
 		const config = createDefaultConfig();
 		for (const id of SEGMENT_IDS) {
@@ -95,6 +104,7 @@ describe("builtin Segment Registry", () => {
 			"git",
 			"context",
 			"tokens",
+			"speed",
 			"cache",
 			"cost",
 			"tools",

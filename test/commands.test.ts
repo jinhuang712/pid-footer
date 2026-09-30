@@ -165,6 +165,112 @@ describe("built-in presets", () => {
 	});
 });
 
+describe("Speed settings", () => {
+	it("appears in Components and immediately saves visibility and label changes", async () => {
+		const { save, snapshots } = okSave();
+		const requests: WizardSelectRequest[] = [];
+		const answers = [
+			"Speed — Show Speed · Label",
+			"Show Speed: Off",
+			"Show Speed: On",
+			"Label: Speed",
+			undefined,
+			undefined,
+		];
+		const result = await runFooterWizard(
+			customConfig(),
+			{
+				async select(request) {
+					requests.push(request);
+					return answers.shift();
+				},
+				async input(title) {
+					expect(title).toBe("Speed label");
+					return "Output rate";
+				},
+			},
+			save,
+		);
+		expect(requests[0]?.tabs?.[1]?.options).toContain("Speed — Show Speed · Label");
+		expect(requests[1]?.options).toEqual(["Show Speed: On", "Label: Speed"]);
+		expect(snapshots).toHaveLength(3);
+		expect(snapshots[0]?.segments.speed.enabled).toBe(false);
+		expect(snapshots[0]?.layout.rows.flatMap((row) => [...row.left, ...row.right])).not.toContain(
+			"speed",
+		);
+		expect(snapshots[1]?.layout.rows.find((row) => row.id === "session")?.left).toContain("speed");
+		expect(result.segments.speed).toEqual({ enabled: true, label: "Output rate" });
+		expect(result.segments.tokens.enabled).toBe(true);
+		expect(footerPreviewLines(result, 120).join("\n")).toContain("Output rate: 42.5 tok/s");
+	});
+
+	it("rolls back Speed visibility and layout on save failure", async () => {
+		const config = customConfig();
+		const { save, calls } = failingSave(1);
+		const result = await runFooterWizard(
+			config,
+			scripted("Speed — Show Speed · Label", "Show Speed: Off", undefined, undefined),
+			save,
+		);
+		expect(calls).toEqual([1]);
+		expect(result.segments.speed).toEqual(config.segments.speed);
+		expect(result.layout).toEqual(config.layout);
+	});
+
+	it("shows Speed read-only in preset mode", async () => {
+		const config = customConfig();
+		applyBuiltInPreset(config, "balanced");
+		const { save, snapshots } = okSave();
+		const requests: WizardSelectRequest[] = [];
+		await runFooterWizard(
+			config,
+			{
+				async select(request) {
+					requests.push(request);
+					return requests.length === 1 ? "Speed — Show Speed · Label" : undefined;
+				},
+			},
+			save,
+		);
+		expect(requests[0]?.tabs?.[1]?.options).toContain("Speed — Show Speed · Label 🔒");
+		expect(requests[1]?.options).toEqual(["Show Speed: On", "Label: Speed"]);
+		expect(snapshots).toEqual([]);
+	});
+
+	it("lets Layout move Speed independently and keeps previews within width", async () => {
+		const { save, snapshots } = okSave();
+		let selected = false;
+		const result = await runFooterWizard(
+			customConfig(),
+			{
+				async select() {
+					if (selected) return undefined;
+					selected = true;
+					return "Layout — Canvas · Move Segments · Add/Clear rows";
+				},
+				async layout(request) {
+					expect(request.labels?.speed).toBe("Speed");
+					const rows = structuredClone([...request.rows]);
+					for (const row of rows) {
+						row.left = row.left.filter((id) => id !== "speed");
+						row.right = row.right.filter((id) => id !== "speed");
+					}
+					rows[0]?.right.push("speed");
+					return rows;
+				},
+			},
+			save,
+		);
+		expect(result.layout.rows[0]?.right).toContain("speed");
+		expect(result.layout.rows.find((row) => row.id === "session")?.left).toEqual(["tokens"]);
+		expect(snapshots).toHaveLength(1);
+		for (const width of [40, 60, 80, 120]) {
+			for (const line of footerPreviewLines(result, width))
+				expect(line.length).toBeLessThanOrEqual(width);
+		}
+	});
+});
+
 describe("root menu", () => {
 	it("uses the runtime snapshot in interactive previews", async () => {
 		const snapshot = createEmptySnapshot();
